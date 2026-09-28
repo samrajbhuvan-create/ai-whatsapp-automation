@@ -13,6 +13,7 @@ import { AnalyticsView } from './components/analytics/AnalyticsView';
 import { SettingsView } from './components/settings/SettingsView';
 import { AuthView } from './components/auth/AuthView';
 import { LandingPageView } from './components/landing/LandingPageView';
+import { OnboardingWizard } from './components/onboarding/OnboardingWizard';
 import { Workspace } from './types';
 
 const DEFAULT_DEMO_WORKSPACE: Workspace = {
@@ -34,7 +35,7 @@ const DEFAULT_DEMO_WORKSPACE: Workspace = {
 export const App: React.FC = () => {
   const [session, setSession] = useState<any>(null);
   const [authLoading, setAuthLoading] = useState(true);
-  const [currentView, setCurrentView] = useState<'app' | 'landing' | 'auth'>('landing');
+  const [currentView, setCurrentView] = useState<'app' | 'landing' | 'auth' | 'onboarding'>('landing');
   const [currentTab, setCurrentTab] = useState('dashboard');
 
   const { workspace: dbWorkspace, loading: workspaceLoading, refetch: refetchWorkspace } = useWorkspace();
@@ -53,10 +54,20 @@ export const App: React.FC = () => {
     });
 
     // 2. Auth state subscription
-    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
       if (newSession) {
-        setCurrentView('app');
+        // New sign-ups go to onboarding; returning users go to app
+        if (event === 'SIGNED_IN') {
+          // Check if workspace already configured
+          supabase.from('workspaces').select('id, waba_id').eq('id', newSession.user.id).single().then(({ data }) => {
+            if (data?.waba_id) {
+              setCurrentView('app');
+            } else {
+              setCurrentView('onboarding');
+            }
+          });
+        }
         refetchWorkspace();
       } else {
         setCurrentView('landing');
@@ -95,8 +106,32 @@ export const App: React.FC = () => {
     return (
       <AuthView
         onLoginSuccess={() => {
-          setCurrentView('app');
+          // After login, check if onboarding needed
+          supabase.auth.getUser().then(({ data: { user } }) => {
+            if (user) {
+              supabase.from('workspaces').select('id, waba_id').eq('id', user.id).single().then(({ data }) => {
+                if (data?.waba_id) {
+                  setCurrentView('app');
+                } else {
+                  setCurrentView('onboarding');
+                }
+              });
+            } else {
+              setCurrentView('app');
+            }
+          });
           refetchWorkspace();
+        }}
+      />
+    );
+  }
+
+  if (currentView === 'onboarding') {
+    return (
+      <OnboardingWizard
+        onComplete={() => {
+          refetchWorkspace();
+          setCurrentView('app');
         }}
       />
     );

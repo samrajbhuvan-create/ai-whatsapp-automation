@@ -36,6 +36,10 @@ export const AppShell: React.FC<AppShellProps> = ({
   onViewAuth,
   children
 }) => {
+  const qualityColor =
+    workspace.quality_rating === 'GREEN' ? 'text-emerald-400' :
+    workspace.quality_rating === 'YELLOW' ? 'text-amber-400' : 'text-red-400';
+
   const navItems = [
     { id: 'dashboard', label: 'Dashboard', icon: LayoutDashboard },
     { id: 'inbox', label: 'Live Inbox & 24h Window', icon: MessageSquare, badge: '3' },
