@@ -25,6 +25,7 @@ interface AppShellProps {
   workspace: Workspace;
   onViewLanding?: () => void;
   onViewAuth?: () => void;
+  onViewOnboarding?: () => void;
   children: React.ReactNode;
 }
 
@@ -34,6 +35,7 @@ export const AppShell: React.FC<AppShellProps> = ({
   workspace,
   onViewLanding,
   onViewAuth,
+  onViewOnboarding,
   children
 }) => {
   const qualityColor =
@@ -130,24 +132,36 @@ export const AppShell: React.FC<AppShellProps> = ({
 
         {/* Bottom: Quick Page Switchers & Usage */}
         <div className="p-3 border-t border-slate-800 space-y-2.5">
-          {/* Landing & Auth Preview links */}
-          <div className="grid grid-cols-2 gap-1.5 text-[11px] font-semibold">
+          {/* Landing, Auth & Connect WA Preview links */}
+          <div className="grid grid-cols-3 gap-1.5 text-[10px] font-semibold">
             {onViewLanding && (
               <button
                 onClick={onViewLanding}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer border border-slate-700/60"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-1.5 px-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer border border-slate-700/60"
+                title="View Landing Page"
               >
-                <Globe className="w-3 h-3 text-emerald-400" />
+                <Globe className="w-3 h-3 text-emerald-400 shrink-0" />
                 <span>Landing</span>
               </button>
             )}
             {onViewAuth && (
               <button
                 onClick={onViewAuth}
-                className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-1.5 px-2 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer border border-slate-700/60"
+                className="bg-slate-800 hover:bg-slate-700 text-slate-300 py-1.5 px-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer border border-slate-700/60"
+                title="View Sign In / Auth"
               >
-                <Lock className="w-3 h-3 text-blue-400" />
-                <span>Auth UI</span>
+                <Lock className="w-3 h-3 text-blue-400 shrink-0" />
+                <span>Auth</span>
+              </button>
+            )}
+            {onViewOnboarding && (
+              <button
+                onClick={onViewOnboarding}
+                className="bg-slate-800 hover:bg-slate-700 text-emerald-300 py-1.5 px-1.5 rounded-lg transition-colors flex items-center justify-center gap-1 cursor-pointer border border-emerald-500/30"
+                title="Connect WhatsApp Wizard"
+              >
+                <PhoneCall className="w-3 h-3 text-emerald-400 shrink-0" />
+                <span>WABA</span>
               </button>
             )}
           </div>

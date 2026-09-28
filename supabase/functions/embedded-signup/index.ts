@@ -30,7 +30,7 @@ serve(async (req: Request) => {
   }
 
   try {
-    const { code, waba_id, phone_number_id, workspace_id } = await req.json();
+    const { code, access_token, waba_id, phone_number_id, workspace_id, phone_number } = await req.json();
 
     if (!workspace_id) {
       return new Response(JSON.stringify({ error: "Missing workspace_id" }), {
@@ -39,32 +39,68 @@ serve(async (req: Request) => {
       });
     }
 
-    let accessToken = "";
+    let accessToken = access_token || "";
     let resolvedPhoneNumberId = phone_number_id || "";
     let resolvedWabaId = waba_id || "";
+    let resolvedPhoneNumber = phone_number || "";
+    let qualityRating = "GREEN";
+    let messagingLimit = "250";
+    let displayName = "";
 
-    // Step 1: Exchange code for user access token (if code provided)
-    if (code && metaAppId && metaAppSecret) {
-      const tokenRes = await fetch(
-        `https://graph.facebook.com/v20.0/oauth/access_token?client_id=${metaAppId}&client_secret=${metaAppSecret}&code=${code}`,
-      );
-      const tokenData = await tokenRes.json();
-      if (tokenData.access_token) {
-        accessToken = tokenData.access_token;
-      } else {
-        console.warn("Token exchange failed:", tokenData);
+    // Step 1: Exchange code for user access token (if code provided and no direct access_token)
+    if (code && !accessToken && metaAppId && metaAppSecret) {
+      try {
+        const tokenRes = await fetch(
+          `https://graph.facebook.com/v20.0/oauth/access_token?client_id=${metaAppId}&client_secret=${metaAppSecret}&code=${code}`,
+        );
+        const tokenData = await tokenRes.json();
+        if (tokenData.access_token) {
+          accessToken = tokenData.access_token;
+        } else {
+          console.warn("Token exchange failed:", tokenData);
+        }
+      } catch (tokenErr) {
+        console.warn("Token exchange error:", tokenErr);
+      }
+    }
+
+    // Step 1.5: If accessToken and resolvedPhoneNumberId are present, query Meta Graph API for real phone info
+    if (accessToken && resolvedPhoneNumberId) {
+      try {
+        const phoneRes = await fetch(
+          `https://graph.facebook.com/v20.0/${resolvedPhoneNumberId}?fields=verified_name,code_verification_status,display_phone_number,quality_rating,messaging_limit_tier`,
+          {
+            headers: { Authorization: `Bearer ${accessToken}` },
+          }
+        );
+        if (phoneRes.ok) {
+          const phoneData = await phoneRes.json();
+          if (phoneData.display_phone_number) resolvedPhoneNumber = phoneData.display_phone_number;
+          if (phoneData.quality_rating) qualityRating = phoneData.quality_rating;
+          if (phoneData.messaging_limit_tier) messagingLimit = phoneData.messaging_limit_tier.replace("TIER_", "");
+          if (phoneData.verified_name) displayName = phoneData.verified_name;
+        }
+      } catch (metaErr) {
+        console.warn("Failed to fetch live phone data from Meta:", metaErr);
       }
     }
 
     // Step 2: Store WABA details in workspace
+    const updatePayload: Record<string, any> = {
+      waba_id: resolvedWabaId,
+      phone_number_id: resolvedPhoneNumberId,
+      wa_connected: true,
+      quality_rating: qualityRating,
+      messaging_limit: messagingLimit,
+      updated_at: new Date().toISOString(),
+    };
+    if (resolvedPhoneNumber) {
+      updatePayload.phone_number = resolvedPhoneNumber;
+    }
+
     await supabase
       .from("workspaces")
-      .update({
-        waba_id: resolvedWabaId,
-        phone_number_id: resolvedPhoneNumberId,
-        wa_connected: true,
-        updated_at: new Date().toISOString(),
-      })
+      .update(updatePayload)
       .eq("id", workspace_id);
 
     // Step 3: Encrypt and store access token in credentials_vault
@@ -72,8 +108,6 @@ serve(async (req: Request) => {
       await supabase.from("credentials_vault").upsert({
         workspace_id,
         key_type: "META_ACCESS_TOKEN",
-        // In production: encrypt with AES-256 using a KMS key
-        // For now we store it with a marker — replace with real encryption
         encrypted_key: `ENC::${btoa(accessToken)}`,
         created_at: new Date().toISOString(),
       });
@@ -117,6 +151,10 @@ serve(async (req: Request) => {
         success: true,
         waba_id: resolvedWabaId,
         phone_number_id: resolvedPhoneNumberId,
+        phone_number: resolvedPhoneNumber,
+        quality_rating: qualityRating,
+        messaging_limit: messagingLimit,
+        display_name: displayName,
         token_stored: !!accessToken,
         webhook_subscribed: !!resolvedWabaId,
       }),

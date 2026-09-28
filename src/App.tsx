@@ -43,12 +43,43 @@ export const App: React.FC = () => {
   // Active workspace: real DB workspace if signed in & loaded, otherwise demo workspace
   const activeWorkspace: Workspace = dbWorkspace || DEFAULT_DEMO_WORKSPACE;
 
+
+  const checkUserWorkspace = async (userId: string) => {
+    try {
+      const { data: profile } = await supabase
+        .from('profiles')
+        .select('workspace_id, workspaces(id, waba_id, phone_number)')
+        .eq('id', userId)
+        .maybeSingle();
+
+      const ws = (profile as any)?.workspaces;
+      if (ws?.waba_id) {
+        setCurrentView('app');
+      } else {
+        // Fallback check directly in workspaces table
+        const { data: wsDirect } = await supabase
+          .from('workspaces')
+          .select('id, waba_id')
+          .eq('id', userId)
+          .maybeSingle();
+
+        if (wsDirect?.waba_id) {
+          setCurrentView('app');
+        } else {
+          setCurrentView('onboarding');
+        }
+      }
+    } catch {
+      setCurrentView('onboarding');
+    }
+  };
+
   useEffect(() => {
     // 1. Initial session check
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
-        setCurrentView('app');
+        checkUserWorkspace(session.user.id);
       }
       setAuthLoading(false);
     });
@@ -57,16 +88,8 @@ export const App: React.FC = () => {
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
       if (newSession) {
-        // New sign-ups go to onboarding; returning users go to app
         if (event === 'SIGNED_IN') {
-          // Check if workspace already configured
-          supabase.from('workspaces').select('id, waba_id').eq('id', newSession.user.id).single().then(({ data }) => {
-            if (data?.waba_id) {
-              setCurrentView('app');
-            } else {
-              setCurrentView('onboarding');
-            }
-          });
+          checkUserWorkspace(newSession.user.id);
         }
         refetchWorkspace();
       } else {
@@ -106,22 +129,16 @@ export const App: React.FC = () => {
     return (
       <AuthView
         onLoginSuccess={() => {
-          // After login, check if onboarding needed
           supabase.auth.getUser().then(({ data: { user } }) => {
             if (user) {
-              supabase.from('workspaces').select('id, waba_id').eq('id', user.id).single().then(({ data }) => {
-                if (data?.waba_id) {
-                  setCurrentView('app');
-                } else {
-                  setCurrentView('onboarding');
-                }
-              });
+              checkUserWorkspace(user.id);
             } else {
               setCurrentView('app');
             }
           });
           refetchWorkspace();
         }}
+        onBackToLanding={() => setCurrentView('landing')}
       />
     );
   }
@@ -144,6 +161,7 @@ export const App: React.FC = () => {
       workspace={activeWorkspace}
       onViewLanding={() => setCurrentView('landing')}
       onViewAuth={() => setCurrentView('auth')}
+      onViewOnboarding={() => setCurrentView('onboarding')}
     >
       {currentTab === 'dashboard' && (
         <DashboardView 
