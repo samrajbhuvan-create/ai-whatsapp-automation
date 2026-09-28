@@ -91,7 +91,7 @@ export type ConversationHandler = 'none' | 'bot' | 'ai' | 'human';
 export type MessageDirection = 'inbound' | 'outbound';
 export type MessageStatus = 'queued' | 'sent' | 'delivered' | 'read' | 'failed' | 'frequency_capped';
 export type PricingCategory = 'service' | 'marketing' | 'utility' | 'authentication';
-export type SenderType = 'customer' | 'agent' | 'ai' | 'bot';
+export type SenderType = 'customer' | 'agent' | 'ai' | 'bot' | 'human';
 
 export interface Conversation {
   id: string;
@@ -101,6 +101,7 @@ export interface Conversation {
   contact_phone: string;
   avatar?: string;
   handler: ConversationHandler;
+  status?: string;
   assigned_to?: string;
   window_expires_at?: string;   // ISO timestamp — 24h service window
   window_expires_in?: string;
@@ -181,16 +182,19 @@ export interface Broadcast {
   id: string;
   workspace_id?: string;
   name: string;
-  template_id: string;
+  template_id?: string;
   template_name?: string;
-  status: BroadcastStatus;
+  category?: string;
+  status: BroadcastStatus | string;
   scheduled_for?: string;
-  target_tags: string[];
+  scheduled_at?: string;
+  target_tags?: string[];
   total_recipients: number;
   sent_count: number;
   delivered_count: number;
   read_count: number;
   failed_count: number;
+  capped_count?: number;
   frequency_capped_count?: number;  // Error 131049 tracking
   created_at?: string;
 }

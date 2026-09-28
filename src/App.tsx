@@ -1,4 +1,6 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import { supabase } from './lib/supabase';
+import { useWorkspace } from './lib/hooks';
 import { AppShell } from './components/AppShell';
 import { DashboardView } from './components/DashboardView';
 import { InboxView } from './components/InboxView';
@@ -13,45 +15,104 @@ import { AuthView } from './components/auth/AuthView';
 import { LandingPageView } from './components/landing/LandingPageView';
 import { Workspace } from './types';
 
+const DEFAULT_DEMO_WORKSPACE: Workspace = {
+  id: 'a0000000-0000-0000-0000-000000000001',
+  name: 'Dressed Delights Ltd',
+  slug: 'dressed-delights',
+  industry: 'Retail & E-commerce',
+  country: 'United States',
+  phone_number: '+1 (555) 902-1144',
+  quality_rating: 'GREEN',
+  messaging_limit: '10,000',
+  plan: 'Pro',
+  usage_contacts: 4120,
+  max_contacts: 10000,
+  usage_ai_replies: 2840,
+  max_ai_replies: 5000,
+};
+
 export const App: React.FC = () => {
-  const [currentView, setCurrentView] = useState<'app' | 'landing' | 'auth'>('app');
+  const [session, setSession] = useState<any>(null);
+  const [authLoading, setAuthLoading] = useState(true);
+  const [currentView, setCurrentView] = useState<'app' | 'landing' | 'auth'>('landing');
   const [currentTab, setCurrentTab] = useState('dashboard');
 
-  const [workspace, setWorkspace] = useState<Workspace>({
-    id: 'a0000000-0000-0000-0000-000000000001',
-    name: 'Dressed Delights Ltd',
-    slug: 'dressed-delights',
-    industry: 'Retail & E-commerce',
-    country: 'United States',
-    phone_number: '+1 (555) 902-1144',
-    quality_rating: 'GREEN',
-    messaging_limit: '10,000',
-    plan: 'Pro',
-    usage_contacts: 4120,
-    max_contacts: 10000,
-    usage_ai_replies: 2840,
-    max_ai_replies: 5000,
-  });
+  const { workspace: dbWorkspace, loading: workspaceLoading, refetch: refetchWorkspace } = useWorkspace();
+
+  // Active workspace: real DB workspace if signed in & loaded, otherwise demo workspace
+  const activeWorkspace: Workspace = dbWorkspace || DEFAULT_DEMO_WORKSPACE;
+
+  useEffect(() => {
+    // 1. Initial session check
+    supabase.auth.getSession().then(({ data: { session } }) => {
+      setSession(session);
+      if (session) {
+        setCurrentView('app');
+      }
+      setAuthLoading(false);
+    });
+
+    // 2. Auth state subscription
+    const { data: { subscription } } = supabase.auth.onAuthStateChange((_event, newSession) => {
+      setSession(newSession);
+      if (newSession) {
+        setCurrentView('app');
+        refetchWorkspace();
+      } else {
+        setCurrentView('landing');
+      }
+    });
+
+    return () => {
+      subscription.unsubscribe();
+    };
+  }, [refetchWorkspace]);
+
+  const handleSignOut = async () => {
+    await supabase.auth.signOut();
+    setCurrentView('landing');
+  };
+
+  if (authLoading) {
+    return (
+      <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white">
+        <div className="w-10 h-10 border-4 border-emerald-500 border-t-transparent rounded-full animate-spin mb-4" />
+        <p className="text-sm text-slate-400 font-medium">Initializing AutoWhatsApp AI...</p>
+      </div>
+    );
+  }
 
   if (currentView === 'landing') {
-    return <LandingPageView onEnterApp={() => setCurrentView('app')} />;
+    return (
+      <LandingPageView
+        onEnterApp={() => setCurrentView('app')}
+        onSignIn={() => setCurrentView('auth')}
+      />
+    );
   }
 
   if (currentView === 'auth') {
-    return <AuthView onLoginSuccess={() => setCurrentView('app')} />;
+    return (
+      <AuthView
+        onLoginSuccess={() => {
+          setCurrentView('app');
+          refetchWorkspace();
+        }}
+      />
+    );
   }
 
   return (
     <AppShell
       currentTab={currentTab}
       onTabChange={setCurrentTab}
-      workspace={workspace}
+      workspace={activeWorkspace}
       onViewLanding={() => setCurrentView('landing')}
       onViewAuth={() => setCurrentView('auth')}
     >
       {currentTab === 'dashboard' && (
         <DashboardView 
-          workspace={workspace} 
+          workspace={activeWorkspace} 
           onNavigate={(tab) => setCurrentTab(tab)} 
         />
       )}
@@ -85,7 +146,7 @@ export const App: React.FC = () => {
       )}
 
       {currentTab === 'settings' && (
-        <SettingsView workspace={workspace} />
+        <SettingsView workspace={activeWorkspace} />
       )}
     </AppShell>
   );

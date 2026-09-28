@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Send, 
   Sparkles, 
@@ -6,120 +6,226 @@ import {
   AlertCircle, 
   UserCheck, 
   Bot, 
-  Tag, 
   CheckCheck,
   Search,
-  ChevronRight,
   Shield,
-  FileText,
-  Paperclip
+  Loader2,
+  RefreshCw
 } from 'lucide-react';
 import { Conversation, Message } from '../types';
+import { useConversations, useMessages, useWorkspace } from '../lib/hooks';
+import { supabase } from '../lib/supabase';
+
+const DEMO_FALLBACK_CONVERSATIONS: Conversation[] = [
+  {
+    id: 'c1',
+    contact_name: 'Amy Lee',
+    contact_phone: '+1 (555) 382-9912',
+    handler: 'ai',
+    window_expires_in: '14h 32m',
+    window_active: true,
+    unread_count: 0,
+    tags: ['VIP Customer', 'Online Store'],
+    last_message: 'Does this silk dress shrink after washing?',
+    last_message_time: '2m ago',
+    notes: 'Customer asked about washing guidelines for Item #992.'
+  },
+  {
+    id: 'c2',
+    contact_name: 'Rajesh Patel',
+    contact_phone: '+91 98201 44521',
+    handler: 'human',
+    assigned_to: 'John Doe',
+    window_expires_in: '3h 15m',
+    window_active: true,
+    unread_count: 2,
+    tags: ['Wholesale', 'Urgent Inquiry'],
+    last_message: 'Can I get a bulk discount for 50 pieces?',
+    last_message_time: '18m ago',
+    notes: 'Interested in volume orders for Mumbai store.'
+  },
+  {
+    id: 'c3',
+    contact_name: 'Carlos Mendez',
+    contact_phone: '+52 55 4912 3019',
+    handler: 'bot',
+    window_expires_in: 'Expired',
+    window_active: false,
+    unread_count: 0,
+    tags: ['Lead Generated'],
+    last_message: 'Selected: Request Callback',
+    last_message_time: 'Yesterday',
+    notes: 'Came through Instagram Click-to-WhatsApp ad.'
+  }
+];
+
+const DEMO_FALLBACK_MESSAGES: Message[] = [
+  {
+    id: 'm1',
+    conversation_id: 'c1',
+    direction: 'inbound',
+    sender_type: 'customer',
+    body: 'Hi! I saw the latest summer collection dress.',
+    timestamp: '11:42 AM',
+    status: 'read'
+  },
+  {
+    id: 'm2',
+    conversation_id: 'c1',
+    direction: 'outbound',
+    sender_type: 'ai',
+    body: 'Hello Amy! ✨ We are delighted you like it. The dress is 100% pure Mulberry silk, crafted for breathable summer comfort. How can I assist you with sizing or care instructions?',
+    timestamp: '11:42 AM',
+    status: 'read'
+  },
+  {
+    id: 'm3',
+    conversation_id: 'c1',
+    direction: 'inbound',
+    sender_type: 'customer',
+    body: 'Does this silk dress shrink after washing?',
+    timestamp: '11:45 AM',
+    status: 'read'
+  },
+  {
+    id: 'm4',
+    conversation_id: 'c1',
+    direction: 'outbound',
+    sender_type: 'ai',
+    body: 'Our Mulberry silk is pre-shrunk, but we strongly recommend dry cleaning or cold hand washing with mild pH-neutral detergent to preserve the luster. Never tumble dry!',
+    timestamp: '11:45 AM',
+    status: 'delivered'
+  }
+];
 
 export const InboxView: React.FC = () => {
-  const [activeChatId, setActiveChatId] = useState('c1');
+  const { conversations: dbConversations, loading: convsLoading, refetch: refetchConvs } = useConversations();
+  const { workspace } = useWorkspace();
+
+  const [activeChatId, setActiveChatId] = useState<string>('c1');
   const [messageInput, setMessageInput] = useState('');
   const [filter, setFilter] = useState<'all' | 'ai' | 'mine'>('all');
+  const [sending, setSending] = useState(false);
+  const [localMessages, setLocalMessages] = useState<Message[]>(DEMO_FALLBACK_MESSAGES);
 
-  const conversations: Conversation[] = [
-    {
-      id: 'c1',
-      contact_name: 'Amy Lee',
-      contact_phone: '+1 (555) 382-9912',
-      handler: 'ai',
-      window_expires_in: '14h 32m',
-      window_active: true,
-      unread_count: 0,
-      tags: ['VIP Customer', 'Online Store'],
-      last_message: 'Does this silk dress shrink after washing?',
-      last_message_time: '2m ago',
-      notes: 'Customer asked about washing guidelines for Item #992.'
-    },
-    {
-      id: 'c2',
-      contact_name: 'Rajesh Patel',
-      contact_phone: '+91 98201 44521',
-      handler: 'human',
-      assigned_to: 'John Doe',
-      window_expires_in: '3h 15m',
-      window_active: true,
-      unread_count: 2,
-      tags: ['Wholesale', 'Urgent Inquiry'],
-      last_message: 'Can I get a bulk discount for 50 pieces?',
-      last_message_time: '18m ago',
-      notes: 'Interested in volume orders for Mumbai store.'
-    },
-    {
-      id: 'c3',
-      contact_name: 'Carlos Mendez',
-      contact_phone: '+52 55 4912 3019',
-      handler: 'bot',
-      window_expires_in: 'Expired',
-      window_active: false,
-      unread_count: 0,
-      tags: ['Lead Generated'],
-      last_message: 'Selected: Request Callback',
-      last_message_time: 'Yesterday',
-      notes: 'Came through Instagram Click-to-WhatsApp ad.'
+  // Active conversations list with fallback
+  const conversations: Conversation[] = dbConversations.length > 0 
+    ? dbConversations.map(c => {
+        // Calculate remaining 24h window
+        let windowActive = true;
+        let windowStr = '23h 59m';
+        if (c.window_expires_at) {
+          const diffMs = new Date(c.window_expires_at).getTime() - Date.now();
+          if (diffMs <= 0) {
+            windowActive = false;
+            windowStr = 'Expired';
+          } else {
+            const hours = Math.floor(diffMs / (1000 * 60 * 60));
+            const mins = Math.floor((diffMs % (1000 * 60 * 60)) / (1000 * 60));
+            windowStr = `${hours}h ${mins}m`;
+          }
+        }
+        return {
+          ...c,
+          handler: c.status === 'AI_ACTIVE' ? 'ai' : 'human',
+          window_expires_in: windowStr,
+          window_active: windowActive,
+          tags: c.tags || ['Inbound Lead'],
+        };
+      })
+    : DEMO_FALLBACK_CONVERSATIONS;
+
+  // Set default active chat ID if needed
+  useEffect(() => {
+    if (conversations.length > 0 && !conversations.some(c => c.id === activeChatId)) {
+      setActiveChatId(conversations[0].id);
     }
-  ];
+  }, [conversations, activeChatId]);
 
-  const messages: Message[] = [
-    {
-      id: 'm1',
-      conversation_id: 'c1',
-      direction: 'inbound',
-      sender_type: 'customer',
-      body: 'Hi! I saw the latest summer collection dress.',
-      timestamp: '11:42 AM',
-      status: 'read'
-    },
-    {
-      id: 'm2',
-      conversation_id: 'c1',
-      direction: 'outbound',
-      sender_type: 'ai',
-      body: 'Hello Amy! ✨ We are delighted you like it. The dress is 100% pure Mulberry silk, crafted for breathable summer comfort. How can I assist you with sizing or care instructions?',
-      timestamp: '11:42 AM',
-      status: 'read'
-    },
-    {
-      id: 'm3',
-      conversation_id: 'c1',
-      direction: 'inbound',
-      sender_type: 'customer',
-      body: 'Does this silk dress shrink after washing?',
-      timestamp: '11:45 AM',
-      status: 'read'
-    },
-    {
-      id: 'm4',
-      conversation_id: 'c1',
-      direction: 'outbound',
-      sender_type: 'ai',
-      body: 'Our Mulberry silk is pre-shrunk, but we strongly recommend dry cleaning or cold hand washing with mild pH-neutral detergent to preserve the luster. Never tumble dry!',
-      timestamp: '11:45 AM',
-      status: 'delivered'
+  // Hook for real-time messages in this conversation
+  const isDbChat = dbConversations.some(c => c.id === activeChatId);
+  const { messages: dbMessages, loading: msgsLoading } = useMessages(isDbChat ? activeChatId : null);
+
+  const activeChat = conversations.find(c => c.id === activeChatId) || conversations[0] || DEMO_FALLBACK_CONVERSATIONS[0];
+  const messages = isDbChat && dbMessages.length > 0 ? dbMessages : localMessages;
+
+  const handleSendMessage = async () => {
+    if (!messageInput.trim()) return;
+    const textToSend = messageInput.trim();
+    setMessageInput('');
+    setSending(true);
+
+    if (isDbChat) {
+      try {
+        const session = (await supabase.auth.getSession()).data.session;
+        await fetch(`${import.meta.env.VITE_SUPABASE_URL}/functions/v1/send-message`, {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            Authorization: `Bearer ${session?.access_token}`,
+          },
+          body: JSON.stringify({
+            conversation_id: activeChat.id,
+            content: textToSend,
+            workspace_id: workspace?.id,
+          }),
+        });
+      } catch (err) {
+        console.warn('Send message error:', err);
+      }
+    } else {
+      // Local fallback
+      setLocalMessages(prev => [
+        ...prev,
+        {
+          id: `m_${Date.now()}`,
+          conversation_id: activeChat.id,
+          direction: 'outbound',
+          sender_type: 'human',
+          body: textToSend,
+          timestamp: new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }),
+          status: 'delivered'
+        }
+      ]);
     }
-  ];
 
-  const activeChat = conversations.find(c => c.id === activeChatId) || conversations[0];
+    setSending(false);
+  };
+
+  const handleToggleAI = async () => {
+    if (isDbChat) {
+      const nextStatus = activeChat.handler === 'ai' ? 'OPEN' : 'AI_ACTIVE';
+      await supabase.from('conversations').update({ status: nextStatus }).eq('id', activeChat.id);
+      refetchConvs();
+    } else {
+      alert(`Toggled AI Agent status for ${activeChat.contact_name}`);
+    }
+  };
 
   return (
-    <div className="h-[calc(100vh-8rem)] bg-white rounded-2xl border border-slate-200/80 shadow-sm flex overflow-hidden">
+    <div className="h-[calc(100vh-8rem)] bg-white rounded-2xl border border-slate-200/80 shadow-2xs flex overflow-hidden">
       
       {/* 1. Left Chat List Pane (320px) */}
       <div className="w-80 border-r border-slate-200 flex flex-col shrink-0">
         
         {/* Search & Filters */}
         <div className="p-3 border-b border-slate-200 space-y-2">
-          <div className="relative">
-            <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
-            <input 
-              type="text" 
-              placeholder="Search conversations..."
-              className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-100 border border-transparent rounded-lg focus:bg-white focus:border-brand-500 outline-none transition-all"
-            />
+          <div className="flex items-center justify-between">
+            <div className="relative flex-1">
+              <Search className="w-3.5 h-3.5 text-slate-400 absolute left-3 top-2.5" />
+              <input 
+                type="text" 
+                placeholder="Search conversations..."
+                className="w-full pl-8 pr-3 py-1.5 text-xs bg-slate-100 border border-transparent rounded-lg focus:bg-white focus:border-brand-500 outline-none transition-all"
+              />
+            </div>
+            <button
+              onClick={() => refetchConvs()}
+              className="ml-2 p-1.5 text-slate-400 hover:text-slate-700 rounded-lg hover:bg-slate-100 transition-colors"
+              title="Refresh"
+            >
+              <RefreshCw className="w-3.5 h-3.5" />
+            </button>
           </div>
 
           <div className="flex space-x-1">
@@ -127,7 +233,7 @@ export const InboxView: React.FC = () => {
               <button
                 key={tab}
                 onClick={() => setFilter(tab)}
-                className={`flex-1 py-1 text-xs font-semibold rounded-md capitalize transition-colors ${
+                className={`flex-1 py-1 text-xs font-semibold rounded-md capitalize transition-colors cursor-pointer ${
                   filter === tab
                     ? 'bg-brand-50 text-brand-700 border border-brand-200'
                     : 'text-slate-500 hover:bg-slate-100'
@@ -141,7 +247,11 @@ export const InboxView: React.FC = () => {
 
         {/* Conversation List Stream */}
         <div className="flex-1 overflow-y-auto divide-y divide-slate-100">
-          {conversations.map((chat) => (
+          {convsLoading ? (
+            <div className="py-8 flex justify-center">
+              <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
+            </div>
+          ) : conversations.map((chat) => (
             <div
               key={chat.id}
               onClick={() => setActiveChatId(chat.id)}
@@ -152,7 +262,7 @@ export const InboxView: React.FC = () => {
               <div className="flex items-center justify-between mb-1">
                 <div className="flex items-center space-x-2">
                   <div className="w-7 h-7 rounded-full bg-slate-200 text-slate-700 flex items-center justify-center font-bold text-xs">
-                    {chat.contact_name.substring(0, 1)}
+                    {(chat.contact_name || 'C').substring(0, 1)}
                   </div>
                   <span className="font-semibold text-slate-800 text-xs">{chat.contact_name}</span>
                 </div>
@@ -164,13 +274,13 @@ export const InboxView: React.FC = () => {
               <div className="flex items-center justify-between pl-9 text-[10px]">
                 <div className="flex items-center space-x-1">
                   {chat.handler === 'ai' && (
-                    <span className="bg-ai-50 text-ai-700 px-1.5 py-0.5 rounded border border-ai-200 font-mono font-bold flex items-center space-x-1">
+                    <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 font-mono font-bold flex items-center space-x-1">
                       <Sparkles className="w-2.5 h-2.5" />
                       <span>AI Active</span>
                     </span>
                   )}
                   {chat.handler === 'human' && (
-                    <span className="bg-emerald-50 text-emerald-700 px-1.5 py-0.5 rounded border border-emerald-200 font-semibold">
+                    <span className="bg-sky-50 text-sky-700 px-1.5 py-0.5 rounded border border-sky-200 font-semibold">
                       Human Agent
                     </span>
                   )}
@@ -194,17 +304,19 @@ export const InboxView: React.FC = () => {
         <div className="h-14 border-b border-slate-200 px-4 flex items-center justify-between bg-white">
           <div className="flex items-center space-x-3">
             <div className="w-8 h-8 rounded-full bg-brand-100 text-brand-700 flex items-center justify-center font-bold text-xs">
-              {activeChat.contact_name.substring(0, 1)}
+              {(activeChat?.contact_name || 'C').substring(0, 1)}
             </div>
             <div>
               <div className="text-xs font-bold text-slate-800 flex items-center space-x-2">
-                <span>{activeChat.contact_name}</span>
-                <span className="text-slate-400 font-normal">({activeChat.contact_phone})</span>
+                <span>{activeChat?.contact_name}</span>
+                <span className="text-slate-400 font-normal">({activeChat?.contact_phone})</span>
               </div>
               <div className="text-[10px] text-slate-500 flex items-center space-x-2">
-                <span className="flex items-center text-emerald-600 font-medium">
+                <span className={`flex items-center font-medium ${
+                  activeChat?.window_active ? 'text-emerald-600' : 'text-amber-600'
+                }`}>
                   <Clock className="w-3 h-3 mr-1" />
-                  24h Care Window: {activeChat.window_expires_in} remaining
+                  24h Care Window: {activeChat?.window_expires_in} remaining
                 </span>
               </div>
             </div>
@@ -212,18 +324,18 @@ export const InboxView: React.FC = () => {
 
           {/* AI vs Human Takeover Button */}
           <div className="flex items-center space-x-2">
-            {activeChat.handler === 'ai' ? (
+            {activeChat?.handler === 'ai' ? (
               <button 
-                onClick={() => alert("Taking over conversation from AI Agent.")}
-                className="bg-ai-50 border border-ai-200 text-ai-700 hover:bg-ai-100 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                onClick={handleToggleAI}
+                className="bg-emerald-50 border border-emerald-200 text-emerald-700 hover:bg-emerald-100 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors cursor-pointer"
               >
                 <UserCheck className="w-3.5 h-3.5" />
                 <span>Take Over from AI</span>
               </button>
             ) : (
               <button 
-                onClick={() => alert("Re-enabling AI Agent on this chat.")}
-                className="bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors"
+                onClick={handleToggleAI}
+                className="bg-brand-50 border border-brand-200 text-brand-700 hover:bg-brand-100 px-3 py-1.5 rounded-lg text-xs font-semibold flex items-center space-x-1.5 transition-colors cursor-pointer"
               >
                 <Bot className="w-3.5 h-3.5" />
                 <span>Hand back to AI</span>
@@ -234,37 +346,43 @@ export const InboxView: React.FC = () => {
 
         {/* Message Stream */}
         <div className="flex-1 bg-[#E5DDD5]/30 p-4 overflow-y-auto space-y-3">
-          {messages.map((msg) => {
-            const isInbound = msg.direction === 'inbound';
+          {msgsLoading ? (
+            <div className="py-8 flex justify-center">
+              <Loader2 className="w-5 h-5 text-emerald-600 animate-spin" />
+            </div>
+          ) : messages.map((msg) => {
+            const isInbound = msg.direction === 'inbound' || (msg as any).direction === 'INBOUND';
+            const isAI = msg.sender_type === 'ai' || (msg as any).sender_type === 'AI';
+            const msgBody = msg.body || (msg as any).content;
             return (
               <div
                 key={msg.id}
                 className={`flex flex-col ${isInbound ? 'items-start' : 'items-end'}`}
               >
                 <div
-                  className={`max-w-[70%] rounded-2xl p-3 shadow-sm text-xs leading-relaxed ${
+                  className={`max-w-[70%] rounded-2xl p-3 shadow-2xs text-xs leading-relaxed ${
                     isInbound
                       ? 'bg-white text-slate-800 border border-slate-200/60'
-                      : msg.sender_type === 'ai'
-                      ? 'bg-gradient-to-br from-ai-50 to-white border border-ai-200 text-slate-800'
+                      : isAI
+                      ? 'bg-gradient-to-br from-emerald-50 to-white border border-emerald-200 text-slate-800'
                       : 'bg-emerald-600 text-white'
                   }`}
                 >
                   {/* Sender Header for AI */}
-                  {msg.sender_type === 'ai' && (
-                    <div className="flex items-center space-x-1 text-[10px] font-bold text-ai-600 mb-1">
+                  {isAI && (
+                    <div className="flex items-center space-x-1 text-[10px] font-bold text-emerald-700 mb-1">
                       <Sparkles className="w-3 h-3" />
-                      <span>AI Agent (Amy) • RAG Grounded</span>
+                      <span>AI Agent • Gemini Powered</span>
                     </div>
                   )}
 
-                  <p className="whitespace-pre-wrap">{msg.body}</p>
+                  <p className="whitespace-pre-wrap">{msgBody}</p>
 
                   <div className={`mt-1 flex items-center justify-end space-x-1 text-[9px] ${
-                    isInbound || msg.sender_type === 'ai' ? 'text-slate-400' : 'text-emerald-200'
+                    isInbound || isAI ? 'text-slate-400' : 'text-emerald-200'
                   }`}>
-                    <span>{msg.timestamp}</span>
-                    {!isInbound && <CheckCheck className="w-3 h-3 text-sky-500" />}
+                    <span>{msg.timestamp || 'Just now'}</span>
+                    {!isInbound && <CheckCheck className="w-3 h-3 text-sky-400" />}
                   </div>
                 </div>
               </div>
@@ -274,30 +392,37 @@ export const InboxView: React.FC = () => {
 
         {/* Composer Bar */}
         <div className="p-3 bg-white border-t border-slate-200">
-          {activeChat.window_active ? (
-            <div className="flex items-center space-x-2">
+          {activeChat?.window_active ? (
+            <form 
+              onSubmit={(e) => { e.preventDefault(); handleSendMessage(); }}
+              className="flex items-center space-x-2"
+            >
               <input
                 type="text"
                 value={messageInput}
                 onChange={(e) => setMessageInput(e.target.value)}
-                placeholder="Type a message as agent (or type '/' for templates & canned answers)..."
+                placeholder="Type a message as agent (or type '/' for templates)..."
                 className="flex-1 px-3 py-2 text-xs border border-slate-300 rounded-xl focus:border-brand-500 outline-none"
               />
               <button 
-                onClick={() => setMessageInput('')}
-                className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1 shadow transition-colors"
+                type="submit"
+                disabled={sending}
+                className="bg-brand-600 hover:bg-brand-700 text-white px-4 py-2 rounded-xl text-xs font-semibold flex items-center space-x-1 shadow transition-colors cursor-pointer"
               >
-                <Send className="w-3.5 h-3.5" />
+                {sending ? <Loader2 className="w-3.5 h-3.5 animate-spin" /> : <Send className="w-3.5 h-3.5" />}
                 <span>Send</span>
               </button>
-            </div>
+            </form>
           ) : (
             <div className="p-3 bg-amber-50 border border-amber-200 rounded-xl text-xs flex items-center justify-between">
               <div className="flex items-center space-x-2 text-amber-800">
                 <AlertCircle className="w-4 h-4 text-amber-600 shrink-0" />
                 <span>Customer service window has expired (&gt; 24 hours). Meta requires an approved template message to re-engage.</span>
               </div>
-              <button className="bg-amber-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-amber-700 text-xs shrink-0">
+              <button 
+                onClick={() => alert("Redirecting to Template Builder to send re-engagement template.")}
+                className="bg-amber-600 text-white px-3 py-1.5 rounded-lg font-semibold hover:bg-amber-700 text-xs shrink-0 cursor-pointer"
+              >
                 Send Template
               </button>
             </div>
@@ -312,16 +437,16 @@ export const InboxView: React.FC = () => {
           <div className="bg-white p-3 rounded-xl border border-slate-200 text-xs space-y-2">
             <div>
               <span className="text-slate-400 text-[10px] block">Full Name</span>
-              <span className="font-semibold text-slate-800">{activeChat.contact_name}</span>
+              <span className="font-semibold text-slate-800">{activeChat?.contact_name}</span>
             </div>
             <div>
               <span className="text-slate-400 text-[10px] block">WhatsApp ID</span>
-              <span className="font-mono text-slate-700">{activeChat.contact_phone}</span>
+              <span className="font-mono text-slate-700">{activeChat?.contact_phone}</span>
             </div>
             <div>
               <span className="text-slate-400 text-[10px] block">Consent Status</span>
               <span className="inline-flex items-center text-emerald-600 font-semibold text-[11px]">
-                <Shield className="w-3 h-3 mr-1" /> Opted-in (CSV Import)
+                <Shield className="w-3 h-3 mr-1" /> Opted-in (Verified)
               </span>
             </div>
           </div>
@@ -331,7 +456,7 @@ export const InboxView: React.FC = () => {
         <div>
           <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Assigned Tags</h3>
           <div className="flex flex-wrap gap-1.5">
-            {activeChat.tags.map((t, idx) => (
+            {(activeChat?.tags || []).map((t, idx) => (
               <span key={idx} className="bg-brand-50 text-brand-700 border border-brand-200 px-2 py-0.5 rounded-md text-[10px] font-medium">
                 #{t}
               </span>
@@ -343,7 +468,7 @@ export const InboxView: React.FC = () => {
         <div>
           <h3 className="text-xs font-bold text-slate-800 uppercase tracking-wider mb-2">Internal Notes</h3>
           <textarea
-            defaultValue={activeChat.notes}
+            defaultValue={activeChat?.notes || 'Customer inquiry recorded.'}
             rows={4}
             className="w-full p-2.5 text-xs bg-white border border-slate-200 rounded-xl focus:border-brand-500 outline-none text-slate-600"
             placeholder="Add internal notes visible only to team members..."

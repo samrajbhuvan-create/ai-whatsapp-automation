@@ -6,9 +6,10 @@ import {
 
 interface LandingPageViewProps {
   onEnterApp: () => void;
+  onSignIn?: () => void;
 }
 
-export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp }) => {
+export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp, onSignIn }) => {
   return (
     <div className="min-h-screen bg-white text-slate-900 font-sans selection:bg-emerald-100 selection:text-emerald-900">
       {/* Navigation Header */}
@@ -32,6 +33,14 @@ export const LandingPageView: React.FC<LandingPageViewProps> = ({ onEnterApp }) 
           </div>
 
           <div className="flex items-center gap-3">
+            {onSignIn && (
+              <button
+                onClick={onSignIn}
+                className="text-xs font-bold text-slate-700 hover:text-slate-900 px-4 py-2.5 rounded-xl border border-slate-200 hover:bg-slate-50 transition-all cursor-pointer"
+              >
+                Sign In
+              </button>
+            )}
             <button
               onClick={onEnterApp}
               className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-bold px-5 py-2.5 rounded-xl shadow-md shadow-brand-600/20 transition-all flex items-center gap-2 cursor-pointer"
