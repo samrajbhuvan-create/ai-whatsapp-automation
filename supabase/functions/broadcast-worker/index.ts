@@ -158,15 +158,59 @@ serve(async (req: Request) => {
         sentSuccess++;
       }
 
-      // Record outbound message in database for live history
+      // Record outbound message in database for live history and inbox view
       try {
-        await supabase.from("messages").insert({
-          workspace_id,
-          direction: "OUTBOUND",
-          phone_number: contact.phone_number,
-          content: template?.body_text || `Broadcast: ${broadcast.name}`,
-          status: "SENT",
-          created_at: new Date().toISOString(),
+        let convId: string | null = null;
+        const { data: conv } = await supabase
+          .from("conversations")
+          .select("id")
+          .eq("contact_id", contact.id)
+          .eq("workspace_id", workspace_id)
+          .maybeSingle();
+
+        if (conv) {
+          convId = conv.id;
+          await supabase
+            .from("conversations")
+            .update({
+              last_message_preview: template?.body_text || `Broadcast: ${broadcast.name}`,
+              last_message_time: new Date().toISOString(),
+            })
+            .eq("id", convId);
+        } else {
+          const { data: newConv } = await supabase
+            .from("conversations")
+            .insert({
+              workspace_id,
+              contact_id: contact.id,
+              last_message_preview: template?.body_text || `Broadcast: ${broadcast.name}`,
+              last_message_time: new Date().toISOString(),
+              status: "open",
+            })
+            .select("id")
+            .single();
+          if (newConv) convId = newConv.id;
+        }
+
+        if (convId) {
+          await supabase.from("messages").insert({
+            conversation_id: convId,
+            workspace_id,
+            direction: "outbound",
+            sender_type: "system",
+            content: template?.body_text || `Broadcast: ${broadcast.name}`,
+            body: template?.body_text || `Broadcast: ${broadcast.name}`,
+            status: "sent",
+            created_at: new Date().toISOString(),
+          });
+        }
+
+        // Record recipient log
+        await supabase.from("broadcast_recipients").insert({
+          broadcast_id,
+          contact_id: contact.id,
+          status: "sent",
+          sent_at: new Date().toISOString(),
         });
 
         // Update contact last_message_at

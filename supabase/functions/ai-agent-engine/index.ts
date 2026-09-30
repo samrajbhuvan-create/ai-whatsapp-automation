@@ -169,10 +169,12 @@ CRITICAL INSTRUCTIONS:
       // Record AI message in DB
       await supabase.from("messages").insert({
         conversation_id,
-        direction: "OUTBOUND",
-        sender_type: "AI",
+        workspace_id: workspace_id || undefined,
+        direction: "outbound",
+        sender_type: "ai",
         content: aiReply,
-        status: "DELIVERED",
+        body: aiReply,
+        status: "delivered",
         created_at: new Date().toISOString(),
       });
 
@@ -182,7 +184,7 @@ CRITICAL INSTRUCTIONS:
         .update({
           last_message_preview: aiReply,
           last_message_time: new Date().toISOString(),
-          status: requiresEscalation ? "NEEDS_AGENT" : "AI_ACTIVE",
+          status: requiresEscalation ? "needs_agent" : "ai_active",
           updated_at: new Date().toISOString(),
         })
         .eq("id", conversation_id);

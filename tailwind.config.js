@@ -55,6 +55,11 @@ export default {
           yellow: '#d97706',
           red:    '#dc2626',
         },
+        background: "var(--background)",
+        foreground: "var(--foreground)",
+        skeleton: "var(--skeleton)",
+        border: "var(--btn-border)",
+        input: "var(--input)",
       },
       fontFamily: {
         sans:    ['Inter', 'system-ui', 'sans-serif'],
@@ -62,6 +67,7 @@ export default {
         mono:    ['JetBrains Mono', 'Fira Code', 'monospace'],
       },
       borderRadius: {
+        DEFAULT: '0.5rem',
         '2xl': '1rem',
         '3xl': '1.5rem',
       },
@@ -69,11 +75,18 @@ export default {
         'brand':  '0 4px 24px 0 rgba(22,163,74,0.15)',
         'card':   '0 1px 4px 0 rgba(0,0,0,0.06)',
         'card-md':'0 4px 16px 0 rgba(0,0,0,0.08)',
+        input: [
+          "0px 2px 3px -1px rgba(0, 0, 0, 0.1)",
+          "0px 1px 0px 0px rgba(25, 28, 33, 0.02)",
+          "0px 0px 0px 1px rgba(25, 28, 33, 0.08)",
+        ].join(", "),
       },
       animation: {
         'pulse-green': 'pulse 2s cubic-bezier(0.4, 0, 0.6, 1) infinite',
         'slide-in':    'slideIn 0.2s ease-out',
         'fade-in':     'fadeIn 0.15s ease-out',
+        ripple: "ripple 2s ease calc(var(--i, 0) * 0.2s) infinite",
+        orbit: "orbit calc(var(--duration) * 1s) linear infinite",
       },
       keyframes: {
         slideIn: {
@@ -83,6 +96,20 @@ export default {
         fadeIn: {
           '0%':   { opacity: '0' },
           '100%': { opacity: '1' },
+        },
+        ripple: {
+          "0%, 100%": { transform: "translate(-50%, -50%) scale(1)" },
+          "50%": { transform: "translate(-50%, -50%) scale(0.9)" },
+        },
+        orbit: {
+          "0%": {
+            transform:
+              "rotate(0deg) translateY(calc(var(--radius) * 1px)) rotate(0deg)",
+          },
+          "100%": {
+            transform:
+              "rotate(360deg) translateY(calc(var(--radius) * 1px)) rotate(-360deg)",
+          },
         },
       },
     },

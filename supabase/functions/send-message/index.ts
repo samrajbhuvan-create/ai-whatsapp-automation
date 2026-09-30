@@ -136,11 +136,14 @@ serve(async (req: Request) => {
       .from("messages")
       .insert({
         conversation_id,
+        workspace_id: targetWsId,
         meta_message_id: metaMsgId,
-        direction: "OUTBOUND",
-        sender_type: "HUMAN_AGENT",
+        wa_message_id: metaMsgId,
+        direction: "outbound",
+        sender_type: "agent",
         content,
-        status: messageStatus,
+        body: content,
+        status: messageStatus.toLowerCase(),
         created_at: new Date().toISOString(),
       })
       .select()

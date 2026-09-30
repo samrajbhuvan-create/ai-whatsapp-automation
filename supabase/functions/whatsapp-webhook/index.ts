@@ -123,10 +123,12 @@ serve(async (req: Request) => {
                   .eq("id", contactId);
 
                 await supabase.from("opt_in_events").insert({
+                  workspace_id: workspaceId,
                   contact_id: contactId,
                   phone_number: senderPhone,
                   event_type: "OPT_OUT",
                   method: `Keyword: ${messageText}`,
+                  source: `Keyword: ${messageText}`,
                   compliance_confirmed: true,
                 });
               }
@@ -164,7 +166,7 @@ serve(async (req: Request) => {
                       window_expires_at: windowExpiresAt,
                       last_message_preview: messageText,
                       last_message_time: new Date().toISOString(),
-                      status: "OPEN",
+                      status: "open",
                       unread_count: 1,
                     })
                     .select("id")
@@ -177,10 +179,14 @@ serve(async (req: Request) => {
               if (conversationId) {
                 await supabase.from("messages").insert({
                   conversation_id: conversationId,
+                  workspace_id: workspaceId,
                   meta_message_id: metaMsgId,
-                  direction: "INBOUND",
+                  wa_message_id: metaMsgId,
+                  direction: "inbound",
+                  sender_type: "customer",
                   content: messageText,
-                  status: "DELIVERED",
+                  body: messageText,
+                  status: "delivered",
                   created_at: new Date().toISOString(),
                 });
               }

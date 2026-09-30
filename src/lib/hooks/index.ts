@@ -360,10 +360,25 @@ export function useAIAgentConfig() {
 
   const updateConfig = async (updates: Partial<AIAgentConfig>) => {
     if (!config?.id) {
+      // Resolve workspace_id for initial config creation
+      let wsId = (updates as any).workspace_id;
+      if (!wsId) {
+        const { data: { user } } = await supabase.auth.getUser();
+        if (user) {
+          const { data: prof } = await supabase
+            .from('profiles')
+            .select('workspace_id')
+            .eq('id', user.id)
+            .single();
+          wsId = prof?.workspace_id || user.id;
+        }
+      }
+
       // Create initial config
       const { data, error } = await supabase
         .from('ai_agent_configs')
         .insert({
+          workspace_id: wsId,
           agent_name: 'WhatsApp Assistant',
           system_prompt: 'You are a helpful WhatsApp business assistant.',
           confidence_threshold: 0.85,

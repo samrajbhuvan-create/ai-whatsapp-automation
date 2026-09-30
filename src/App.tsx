@@ -37,15 +37,22 @@ export const App: React.FC = () => {
   const [authLoading, setAuthLoading] = useState(true);
   const [currentView, setCurrentView] = useState<'app' | 'landing' | 'auth' | 'onboarding'>('landing');
   const [currentTab, setCurrentTab] = useState('dashboard');
+  // Track if user is in demo mode (no real session)
+  const [isDemoMode, setIsDemoMode] = useState(false);
 
   const { workspace: dbWorkspace, loading: workspaceLoading, refetch: refetchWorkspace } = useWorkspace();
 
   // Active workspace: real DB workspace if signed in & loaded, otherwise demo workspace
   const activeWorkspace: Workspace = dbWorkspace || DEFAULT_DEMO_WORKSPACE;
 
-
+  /**
+   * Determines where to route an authenticated user:
+   * - If they have a workspace with a waba_id → Dashboard
+   * - If not → Onboarding Wizard (to connect Meta WhatsApp API)
+   */
   const checkUserWorkspace = async (userId: string) => {
     try {
+      // Step 1: get the user's profile to find their linked workspace
       const { data: profile } = await supabase
         .from('profiles')
         .select('workspace_id, workspaces(id, waba_id, phone_number)')
@@ -53,29 +60,38 @@ export const App: React.FC = () => {
         .maybeSingle();
 
       const ws = (profile as any)?.workspaces;
+
+      // If their workspace has a connected WhatsApp account → go to dashboard
       if (ws?.waba_id) {
         setCurrentView('app');
-      } else {
-        // Fallback check directly in workspaces table
+        return;
+      }
+
+      // Step 2: if profile has a workspace_id but no waba_id in the join,
+      // double-check the workspaces table directly (covers edge cases)
+      if (profile?.workspace_id) {
         const { data: wsDirect } = await supabase
           .from('workspaces')
           .select('id, waba_id')
-          .eq('id', userId)
+          .eq('id', profile.workspace_id)
           .maybeSingle();
 
         if (wsDirect?.waba_id) {
           setCurrentView('app');
-        } else {
-          setCurrentView('onboarding');
+          return;
         }
       }
+
+      // No WhatsApp connected → guide through onboarding
+      setCurrentView('onboarding');
     } catch {
+      // On any error, send to onboarding so user can complete setup
       setCurrentView('onboarding');
     }
   };
 
   useEffect(() => {
-    // 1. Initial session check
+    // 1. Check for an existing session on mount
     supabase.auth.getSession().then(({ data: { session } }) => {
       setSession(session);
       if (session) {
@@ -84,16 +100,21 @@ export const App: React.FC = () => {
       setAuthLoading(false);
     });
 
-    // 2. Auth state subscription
+    // 2. Listen for auth state changes (sign in / sign out)
     const { data: { subscription } } = supabase.auth.onAuthStateChange((event, newSession) => {
       setSession(newSession);
       if (newSession) {
         if (event === 'SIGNED_IN') {
+          setIsDemoMode(false);
           checkUserWorkspace(newSession.user.id);
         }
         refetchWorkspace();
       } else {
-        setCurrentView('landing');
+        // Signed out — only redirect if not in demo mode
+        setIsDemoMode(prev => {
+          if (!prev) setCurrentView('landing');
+          return false;
+        });
       }
     });
 
@@ -104,9 +125,17 @@ export const App: React.FC = () => {
 
   const handleSignOut = async () => {
     await supabase.auth.signOut();
+    setIsDemoMode(false);
     setCurrentView('landing');
   };
 
+  // Demo login: skip authentication, view the dashboard with demo data
+  const handleDemoLogin = () => {
+    setIsDemoMode(true);
+    setCurrentView('app');
+  };
+
+  // Loading spinner while auth state resolves
   if (authLoading) {
     return (
       <div className="h-screen w-screen flex flex-col items-center justify-center bg-slate-900 text-white">
@@ -116,33 +145,39 @@ export const App: React.FC = () => {
     );
   }
 
+  // ── LANDING PAGE ─────────────────────────────────────────────────────────────
   if (currentView === 'landing') {
     return (
       <LandingPageView
-        onEnterApp={() => setCurrentView('app')}
+        onEnterApp={() => setCurrentView('auth')}
         onSignIn={() => setCurrentView('auth')}
       />
     );
   }
 
+  // ── AUTH PAGE (Sign Up / Sign In) ────────────────────────────────────────────
   if (currentView === 'auth') {
     return (
       <AuthView
         onLoginSuccess={() => {
           supabase.auth.getUser().then(({ data: { user } }) => {
             if (user) {
+              setIsDemoMode(false);
               checkUserWorkspace(user.id);
             } else {
-              setCurrentView('app');
+              // Auth succeeded but no user returned — route to onboarding
+              setCurrentView('onboarding');
             }
           });
           refetchWorkspace();
         }}
+        onDemoLogin={handleDemoLogin}
         onBackToLanding={() => setCurrentView('landing')}
       />
     );
   }
 
+  // ── ONBOARDING WIZARD (Business Setup + Meta WABA Connection) ────────────────
   if (currentView === 'onboarding') {
     return (
       <OnboardingWizard
@@ -154,19 +189,21 @@ export const App: React.FC = () => {
     );
   }
 
+  // ── CLIENT DASHBOARD (Authenticated + WABA Connected) ───────────────────────
   return (
     <AppShell
       currentTab={currentTab}
       onTabChange={setCurrentTab}
       workspace={activeWorkspace}
-      onViewLanding={() => setCurrentView('landing')}
-      onViewAuth={() => setCurrentView('auth')}
-      onViewOnboarding={() => setCurrentView('onboarding')}
+      isDemoMode={isDemoMode}
+      onSignOut={handleSignOut}
+      onConnectWhatsApp={() => setCurrentView('onboarding')}
     >
       {currentTab === 'dashboard' && (
-        <DashboardView 
-          workspace={activeWorkspace} 
-          onNavigate={(tab) => setCurrentTab(tab)} 
+        <DashboardView
+          workspace={activeWorkspace}
+          onNavigate={(tab) => setCurrentTab(tab)}
+          onConnectWhatsApp={() => setCurrentView('onboarding')}
         />
       )}
 

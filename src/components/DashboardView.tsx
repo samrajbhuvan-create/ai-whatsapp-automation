@@ -14,9 +14,10 @@ import { useContacts, useBroadcasts, useTemplates } from '../lib/hooks';
 interface DashboardViewProps {
   workspace: Workspace;
   onNavigate: (tab: string) => void;
+  onConnectWhatsApp?: () => void;
 }
 
-export const DashboardView: React.FC<DashboardViewProps> = ({ workspace, onNavigate }) => {
+export const DashboardView: React.FC<DashboardViewProps> = ({ workspace, onNavigate, onConnectWhatsApp }) => {
   const { contacts } = useContacts();
   const { broadcasts } = useBroadcasts();
   const { templates } = useTemplates();
@@ -32,29 +33,53 @@ export const DashboardView: React.FC<DashboardViewProps> = ({ workspace, onNavig
     <div className="space-y-6 max-w-7xl mx-auto">
       
       {/* 1. Meta Health & Setup Checklist Alert */}
-      <div className="bg-gradient-to-r from-emerald-500/10 via-brand-500/5 to-transparent border border-emerald-500/30 rounded-2xl p-4 flex items-center justify-between shadow-2xs">
-        <div className="flex items-center space-x-3">
-          <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-700 flex items-center justify-center font-bold">
-            <ShieldCheck className="w-5 h-5" />
-          </div>
-          <div>
-            <div className="flex items-center space-x-2">
-              <span className="font-bold text-slate-800 text-sm">Meta Account Health: High (Limit: {workspace.messaging_limit} / 24h)</span>
-              <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">ACTIVE</span>
+      {wabaConnected ? (
+        <div className="bg-gradient-to-r from-emerald-500/10 via-brand-500/5 to-transparent border border-emerald-500/30 rounded-2xl p-4 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-emerald-500/20 text-emerald-700 flex items-center justify-center font-bold">
+              <ShieldCheck className="w-5 h-5" />
             </div>
-            <p className="text-xs text-slate-500">Connected to phone number {workspace.phone_number} with zero delivery policy warnings.</p>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-slate-800 text-sm">Meta Account Health: High (Limit: {workspace.messaging_limit} / 24h)</span>
+                <span className="bg-emerald-100 text-emerald-800 text-[10px] font-bold px-2 py-0.5 rounded-full">ACTIVE</span>
+              </div>
+              <p className="text-xs text-slate-500">Connected to phone number {workspace.phone_number} with zero delivery policy warnings.</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button 
+              onClick={() => onNavigate('templates')}
+              className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow transition-colors cursor-pointer"
+            >
+              Create New Template
+            </button>
           </div>
         </div>
-
-        <div className="flex items-center space-x-3">
-          <button 
-            onClick={() => onNavigate('templates')}
-            className="bg-brand-600 hover:bg-brand-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow transition-colors cursor-pointer"
-          >
-            Create New Template
-          </button>
+      ) : (
+        <div className="bg-gradient-to-r from-orange-500/10 via-amber-500/5 to-transparent border border-orange-400/40 rounded-2xl p-4 flex items-center justify-between shadow-2xs">
+          <div className="flex items-center space-x-3">
+            <div className="w-10 h-10 rounded-xl bg-orange-500/20 text-orange-600 flex items-center justify-center font-bold">
+              <ShieldCheck className="w-5 h-5" />
+            </div>
+            <div>
+              <div className="flex items-center space-x-2">
+                <span className="font-bold text-slate-800 text-sm">WhatsApp Not Connected Yet</span>
+                <span className="bg-orange-100 text-orange-700 text-[10px] font-bold px-2 py-0.5 rounded-full">ACTION NEEDED</span>
+              </div>
+              <p className="text-xs text-slate-500">Connect your official Meta WhatsApp Business API to start sending messages.</p>
+            </div>
+          </div>
+          <div className="flex items-center space-x-3">
+            <button 
+              onClick={onConnectWhatsApp}
+              className="bg-orange-600 hover:bg-orange-700 text-white text-xs font-semibold px-4 py-2 rounded-xl shadow transition-colors cursor-pointer flex items-center gap-1.5"
+            >
+              Connect WhatsApp →
+            </button>
+          </div>
         </div>
-      </div>
+      )}
 
       {/* 2. Key Metric Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
